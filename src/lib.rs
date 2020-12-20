@@ -184,11 +184,12 @@
 
 #![cfg_attr(feature = "unsized", feature(unsized_locals, unsized_fn_params))]
 #![cfg_attr(feature = "unsized", allow(incomplete_features))]
+#![cfg_attr(not(test), no_std)]
 
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::pin::Pin;
+use core::marker::PhantomData;
+use core::ops::Deref;
+use core::ops::DerefMut;
+use core::pin::Pin;
 
 // Macro to add ?Sized bounds to the listed template arguments, but only when the unsized feature
 // is enabled.
@@ -353,7 +354,7 @@ where
 /// [`stack_let`]: macro.stack_let.html
 /// [`PinStack`]: type.PinStack.html
 pub struct Unpinned<U: ?Sized, T: FromUnpinned<U>> {
-    t: std::marker::PhantomData<T>,
+    t: core::marker::PhantomData<T>,
     u: U,
 }
 
@@ -387,7 +388,7 @@ macro_rules! internal_pin_stack {
         let $id: $crate::PinStack<_> = unsafe {
             let $id = $crate::StackPinned::new(&mut $id);
 
-            std::pin::Pin::new_unchecked($id)
+            core::pin::Pin::new_unchecked($id)
         };
     };
     (mut $id:ident) => {
@@ -395,7 +396,7 @@ macro_rules! internal_pin_stack {
         let mut $id: $crate::PinStack<_> = unsafe {
             let $id = $crate::StackPinned::new(&mut $id);
 
-            std::pin::Pin::new_unchecked($id)
+            core::pin::Pin::new_unchecked($id)
         };
     };
 }
@@ -406,7 +407,7 @@ cfg_unsized! {
         pub unsafe fn write_pinned<Source, Dest: FromUnpinned<Source>>(source: Source, pdest: *mut Dest)
     }, {
         let (dest, data) = FromUnpinned::<Source>::from_unpinned(source);
-        std::ptr::write(pdest, dest);
+        core::ptr::write(pdest, dest);
         FromUnpinned::<Source>::on_pin(&mut *pdest, data);
     }
 }
@@ -494,8 +495,8 @@ mod tests {
     use super::FromUnpinned;
     use super::PinStack;
     use super::Unpinned;
-    use std::marker::PhantomPinned;
-    use std::ptr::NonNull;
+    use core::marker::PhantomPinned;
+    use core::ptr::NonNull;
 
     struct Unmovable {
         data: String,
