@@ -14,4 +14,11 @@ edition = "2018"
 [badges]
 maintenance = { status = "experimental" }
 
+[features]
+
+default = []
+
+# Allow ?Sized types by enabling the unsized_locals and unsized_fn_params unstable features.
+unsized = []
+
 [dependencies]

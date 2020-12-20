@@ -182,10 +182,29 @@
 //! [`Unpinned`]: struct.Unpinned.html
 //! [`!Unpin`]: https://doc.rust-lang.org/std/pin/index.html#unpin
 
+#![cfg_attr(feature = "unsized", feature(unsized_locals, unsized_fn_params))]
+#![cfg_attr(feature = "unsized", allow(incomplete_features))]
+
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::pin::Pin;
+
+// Macro to add ?Sized bounds to the listed template arguments, but only when the unsized feature
+// is enabled.
+#[cfg(not(feature = "unsized"))]
+macro_rules! cfg_unsized {
+    {<$($bounds:ident),+>, {$($tokens:tt)*}, $block:tt} => {
+        $($tokens)* $block
+    };
+}
+
+#[cfg(feature = "unsized")]
+macro_rules! cfg_unsized {
+    {<$($bounds:ident),+>, {$($tokens:tt)*}, $block:tt} => {
+        $($tokens)* where $($bounds: ?Sized),+ $block
+    };
+}
 
 /// Struct that represents data that is pinned to the stack, at the point of declaration.
 ///
@@ -213,9 +232,9 @@ use std::pin::Pin;
 /// [`PinStack<T>`]: type.PinStack.html
 /// [`stack_let`]: macro.stack_let.html
 #[repr(transparent)]
-pub struct StackPinned<'pin, T>(&'pin mut T);
+pub struct StackPinned<'pin, T: ?Sized>(&'pin mut T);
 
-impl<'pin, T> StackPinned<'pin, T> {
+impl<'pin, T: ?Sized> StackPinned<'pin, T> {
     /// # Safety
     /// Currently the only way to build a safe [`StackPinned<T>`] instance is to use the
     /// [`stack_let`] macro that will return a [`PinStack<T>`] instance.
@@ -229,14 +248,14 @@ impl<'pin, T> StackPinned<'pin, T> {
     }
 }
 
-impl<'pin, T> Deref for StackPinned<'pin, T> {
+impl<'pin, T: ?Sized> Deref for StackPinned<'pin, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'pin, T> DerefMut for StackPinned<'pin, T> {
+impl<'pin, T: ?Sized> DerefMut for StackPinned<'pin, T> {
     fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
         &mut self.0
     }
@@ -258,7 +277,7 @@ impl<'pin, T> DerefMut for StackPinned<'pin, T> {
 ///
 /// [`stack_let`]: macro.stack_let.html
 /// [`StackPinned`]: struct.StackPinned.html
-pub unsafe trait FromUnpinned<Source>
+pub unsafe trait FromUnpinned<Source: ?Sized>
 where
     Self: Sized,
 {
@@ -333,20 +352,24 @@ where
 ///
 /// [`stack_let`]: macro.stack_let.html
 /// [`PinStack`]: type.PinStack.html
-pub struct Unpinned<U, T: FromUnpinned<U>> {
-    u: U,
+pub struct Unpinned<U: ?Sized, T: FromUnpinned<U>> {
     t: std::marker::PhantomData<T>,
+    u: U,
 }
 
-unsafe impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
-    type PinData = <T as FromUnpinned<U>>::PinData;
+cfg_unsized! {
+    <U, T>, {
+        unsafe impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T
+    }, {
+        type PinData = <T as FromUnpinned<U>>::PinData;
 
-    unsafe fn from_unpinned(src: Unpinned<U, T>) -> (Self, Self::PinData) {
-        <T as FromUnpinned<U>>::from_unpinned(src.u)
-    }
+        unsafe fn from_unpinned(src: Unpinned<U, T>) -> (Self, Self::PinData) {
+            <T as FromUnpinned<U>>::from_unpinned(src.u)
+        }
 
-    unsafe fn on_pin(&mut self, pin_data: Self::PinData) {
-        <T as FromUnpinned<U>>::on_pin(self, pin_data)
+        unsafe fn on_pin(&mut self, pin_data: Self::PinData) {
+            <T as FromUnpinned<U>>::on_pin(self, pin_data)
+        }
     }
 }
 
@@ -378,39 +401,42 @@ macro_rules! internal_pin_stack {
 }
 
 #[doc(hidden)]
-pub unsafe fn write_pinned<Source, Dest>(source: Source, pdest: *mut Dest)
-where
-    Dest: FromUnpinned<Source>,
-{
-    let (dest, data) = FromUnpinned::<Source>::from_unpinned(source);
-    std::ptr::write(pdest, dest);
-    FromUnpinned::<Source>::on_pin(&mut *pdest, data);
+cfg_unsized! {
+    <Source>, {
+        pub unsafe fn write_pinned<Source, Dest: FromUnpinned<Source>>(source: Source, pdest: *mut Dest)
+    }, {
+        let (dest, data) = FromUnpinned::<Source>::from_unpinned(source);
+        std::ptr::write(pdest, dest);
+        FromUnpinned::<Source>::on_pin(&mut *pdest, data);
+    }
 }
 
 #[doc(hidden)]
-pub unsafe fn from_unpinned<Source, Dest>(
-    source: Unpinned<Source, Dest>,
-) -> (Dest, Dest::PinData, PhantomData<Unpinned<Source, Dest>>)
-where
-    Dest: FromUnpinned<Source>,
-{
-    let (dest, data) = FromUnpinned::from_unpinned(source);
-    (dest, data, PhantomData)
+cfg_unsized! {
+    <Source>, {
+        pub unsafe fn from_unpinned<Source, Dest: FromUnpinned<Source>>(
+            source: Unpinned<Source, Dest>,
+        ) -> (Dest, Dest::PinData, PhantomData<Unpinned<Source, Dest>>)
+    }, {
+        let (dest, data) = FromUnpinned::from_unpinned(source);
+        (dest, data, PhantomData)
+    }
 }
 
 #[doc(hidden)]
-pub unsafe fn from_source<Dest, Source>(
-    source: Source,
-) -> (Dest, Dest::PinData, PhantomData<Source>)
-where
-    Dest: FromUnpinned<Source>,
-{
-    let (dest, data) = FromUnpinned::from_unpinned(source);
-    (dest, data, PhantomData)
+cfg_unsized! {
+    <Source>, {
+        pub unsafe fn from_source<Dest: FromUnpinned<Source>, Source>(
+            source: Source,
+        ) -> (Dest, Dest::PinData, PhantomData<Source>)
+    }, {
+        let (dest, data) = FromUnpinned::from_unpinned(source);
+        (dest, data, PhantomData)
+    }
 }
 
 #[doc(hidden)]
-pub unsafe fn on_pin<Source, Dest>(
+pub unsafe fn on_pin<Source: ?Sized, Dest: ?Sized>(
     pdest: *mut Dest,
     data: Dest::PinData,
     _source: PhantomData<Source>,
@@ -511,10 +537,40 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "unsized")]
+    unsafe impl FromUnpinned<str> for Unmovable {
+        type PinData = ();
+        unsafe fn from_unpinned(src: str) -> (Self, Self::PinData) {
+            (
+                Self {
+                    data: String::from(&src),
+                    slice: NonNull::dangling(),
+                    _pin: PhantomPinned,
+                },
+                (),
+            )
+        }
+
+        unsafe fn on_pin(&mut self, _pin_data: Self::PinData) {
+            <Self as FromUnpinned<String>>::on_pin(self, _pin_data);
+        }
+    }
+
     #[test]
     fn let_stack_unmovable() {
         let test_str = "Intel the Beagle is the greatest dog in existence";
         stack_let!(mut unmovable = Unmovable::new_unpinned(String::from(test_str)));
+        let slice = Unmovable::slice_mut(&mut unmovable);
+        slice.make_ascii_uppercase();
+        assert_eq!(test_str.to_ascii_uppercase(), Unmovable::slice(&unmovable));
+    }
+
+    #[test]
+    #[cfg(feature = "unsized")]
+    fn let_stack_unmovable_unsized() {
+        let test_str = "Intel the Beagle is the greatest dog in existence";
+        let test_str_value: str = *Box::from(test_str);
+        stack_let!(mut unmovable: Unmovable = test_str_value);
         let slice = Unmovable::slice_mut(&mut unmovable);
         slice.make_ascii_uppercase();
         assert_eq!(test_str.to_ascii_uppercase(), Unmovable::slice(&unmovable));
