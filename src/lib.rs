@@ -418,6 +418,16 @@ impl<U: IntoPinned<T>, T> Unpinned<U, T> {
     pub fn new(u: U) -> Self {
         Self { u, t: PhantomData }
     }
+
+    pub fn into_inner(self) -> U {
+        self.u
+    }
+}
+
+impl<U: IntoPinned<T>, T> From<U> for Unpinned<U, T> {
+    fn from(u: U) -> Self {
+        Self::new(u)
+    }
 }
 
 #[doc(hidden)]
