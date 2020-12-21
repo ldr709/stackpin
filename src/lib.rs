@@ -256,6 +256,9 @@ impl<'pin, T> DerefMut for StackPinned<'pin, T> {
 /// the functions that must uphold invariants that cannot be checked by the compiler. See the
 /// documentation of each function for information on the invariants.
 ///
+/// However, for [`Unpin`] types it should be safe to implement this trait in the trivial way.
+/// There is a generic implementation for this case, to avoid having to write unsafe code.
+///
 /// [`stack_let`]: macro.stack_let.html
 /// [`StackPinned`]: struct.StackPinned.html
 pub unsafe trait FromUnpinned<Source>
@@ -287,6 +290,17 @@ where
     /// * For convenience, a naked mutable borrow is directly given.
     ///   Implementers of this function are **not** allowed to move out of this mutable borrow.
     unsafe fn on_pin(&mut self, pin_data: Self::PinData);
+}
+
+/// Trivial implementation for when `T` is [`Unpin`].
+unsafe impl<T: Unpin> FromUnpinned<T> for T {
+    type PinData = ();
+
+    unsafe fn from_unpinned(src: T) -> (Self, Self::PinData) {
+        (src, ())
+    }
+
+    unsafe fn on_pin(&mut self, _pin_data: Self::PinData) {}
 }
 
 /// A helper struct around `U` that remembers the `T` destination type.
