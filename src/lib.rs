@@ -442,15 +442,15 @@ pub unsafe fn on_pin<Source, Dest>(
     FromUnpinned::<Source>::on_pin(&mut *pdest, data);
 }
 
-/// `stack_let!(id = expr)` binds a [`PinStack<T>`] to `id` if `expr` is an expression of type `U` where [`T: FromUnpinned<U>`].
+/// `stack_let!(id = expr)` binds a [`PinStack<T>`] to `id` if `expr` is an expression of type `U` where [`U: IntoPinned<T>`].
 ///
 /// If `expr` is of type [`Unpinned<U, T>`] for some `U`, then no type annotation is necessary.
-/// If `expr` is of type `U` where [`T: FromUnpinned<U>`], use `stack_let!(id : T = expr)`.
+/// If `expr` is of type `U` where [`U: IntoPinned<T>`], use `stack_let!(id : T = expr)`.
 ///
 /// To bind `id` mutably, use `stack_let!(mut id = expr)`.
 ///
 /// [`PinStack<T>`]: type.PinStack.html
-/// [`T: FromUnpinned<U>`]: trait.FromUnpinned.html
+/// [`U: IntoPinned<T>`]: trait.IntoPinned.html
 /// [`Unpinned<U, T>`]: struct.Unpinned.html
 #[macro_export]
 macro_rules! stack_let {
