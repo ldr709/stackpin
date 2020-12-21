@@ -289,6 +289,28 @@ where
     unsafe fn on_pin(&mut self, pin_data: Self::PinData);
 }
 
+/// Flipped version of [`FromUnpinned`].
+///
+/// `IntoPinned` is to [`FromUnpinned`] as [`Into`] is to [`From`]. As with [`From`] and [`Into`],
+/// where possible you should implement [`FromUnpinned`] and use [`IntoPinned`] for trait bounds.
+pub unsafe trait IntoPinned<Target> {
+    type PinData;
+    unsafe fn into_pinned(self) -> (Target, Self::PinData);
+    unsafe fn on_pin(t: &mut Target, pin_data: Self::PinData);
+}
+
+unsafe impl<Source, Target: FromUnpinned<Source>> IntoPinned<Target> for Source {
+    type PinData = Target::PinData;
+
+    unsafe fn into_pinned(self) -> (Target, Self::PinData) {
+        Target::from_unpinned(self)
+    }
+
+    unsafe fn on_pin(t: &mut Target, pin_data: Self::PinData) {
+        t.on_pin(pin_data)
+    }
+}
+
 /// A helper struct around `U` that remembers the `T` destination type.
 ///
 /// This struct is typically used to build [`PinStack`] values using the [`stack_let`] macro
@@ -333,24 +355,24 @@ where
 ///
 /// [`stack_let`]: macro.stack_let.html
 /// [`PinStack`]: type.PinStack.html
-pub struct Unpinned<U, T: FromUnpinned<U>> {
+pub struct Unpinned<U: IntoPinned<T>, T> {
     u: U,
     t: std::marker::PhantomData<T>,
 }
 
-unsafe impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
-    type PinData = <T as FromUnpinned<U>>::PinData;
+unsafe impl<U: IntoPinned<T>, T> FromUnpinned<Unpinned<U, T>> for T {
+    type PinData = U::PinData;
 
     unsafe fn from_unpinned(src: Unpinned<U, T>) -> (Self, Self::PinData) {
-        <T as FromUnpinned<U>>::from_unpinned(src.u)
+        src.u.into_pinned()
     }
 
     unsafe fn on_pin(&mut self, pin_data: Self::PinData) {
-        <T as FromUnpinned<U>>::on_pin(self, pin_data)
+        <U as IntoPinned::<T>>::on_pin(self, pin_data)
     }
 }
 
-impl<U, T: FromUnpinned<U>> Unpinned<U, T> {
+impl<U: IntoPinned<T>, T> Unpinned<U, T> {
     pub fn new(u: U) -> Self {
         Self { u, t: PhantomData }
     }
@@ -380,11 +402,11 @@ macro_rules! internal_pin_stack {
 #[doc(hidden)]
 pub unsafe fn write_pinned<Source, Dest>(source: Source, pdest: *mut Dest)
 where
-    Dest: FromUnpinned<Source>,
+    Source: IntoPinned<Dest>,
 {
-    let (dest, data) = FromUnpinned::<Source>::from_unpinned(source);
+    let (dest, data) = source.into_pinned();
     std::ptr::write(pdest, dest);
-    FromUnpinned::<Source>::on_pin(&mut *pdest, data);
+    <Source as IntoPinned::<Dest>>::on_pin(&mut *pdest, data);
 }
 
 #[doc(hidden)]
