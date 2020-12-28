@@ -338,10 +338,12 @@ cfg_unsized! {
     }
 }
 
-/// Trivial implementation for when `T` is [`Unpin`].
-unsafe impl<T: Unpin> FromUnpinned<T> for T {
+/// Trivial implementation of [`FromUnpinned`].
+unsafe impl<T> FromUnpinned<T> for T {
     type PinData = ();
 
+    // This implementation is safe because you can always safely use Box::pin to go from a T to a
+    // Pin<&mut T> pointing to a pinned location.
     unsafe fn from_unpinned(src: T) -> (Self, Self::PinData) {
         (src, ())
     }
